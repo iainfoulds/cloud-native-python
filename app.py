@@ -1,17 +1,18 @@
-from flask import Flask
-from flask import jsonify
+from flask import Flask, request, jsonify
+
 from flask import abort
-from flask import make_response
+from flask import make_response, url_for
 
 import json
 import sqlite3
 
 app = Flask(__name__)
 
+# Set up route for displaying the REST API info
 @app.route("/api/v1/info")
 def home_index():
     conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully");
+    print ("Opened database successfully")
     api_list=[]
     cursor = conn.execute("SELECT buildtime, version, methods, links from apirelease")
 
@@ -26,9 +27,10 @@ def home_index():
     conn.close()
     return jsonify({'api_version': api_list}), 200
 
+# Definition to list users from sqlite database
 def list_users():
     conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully");
+    print ("Opened database successfully")
     api_list=[]
     cursor = conn.execute("SELECT username, full_name, emailid, password, id from users")
 
@@ -44,9 +46,10 @@ def list_users():
     conn.close()
     return jsonify({'user_list': api_list})
 
+# Definition to list a specific user from sqlite database
 def list_user(user_id):
     conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully");
+    print ("Opened database successfully")
     api_list=[]
     cursor=conn.cursor()
     cursor.execute("SELECT * from users where id=?",(user_id,))
@@ -65,17 +68,121 @@ def list_user(user_id):
     conn.close()
     return jsonify(user)
 
+# Definition to add a user to the sqlite database
+def add_user(new_user):
+    conn = sqlite3.connect('mydb.db')
+    print ("Opened database successfully")
+    api_list=[]
+    cursor=conn.cursor()
+    cursor.execute("SELECT * from users where username=? or emailid=?",(new_user['username'],new_user['email']))
+    data = cursor.fetchall()
+
+    if len(data) != 0:
+        abort(409)
+    else:
+        cursor.execute("insert into users (username, emailid, password,full_name) values(?,?,?,?)",(new_user['username'],new_user['email'],
+        new_user['password'], new_user['name']))
+        conn.commit()
+        return "Success"
+
+    conn.close()
+    return jsonify(a_dict)
+
+# Definition to delete a specific user
+def del_user(del_user):
+    conn = sqlite3.connect('mydb.db')
+    print ("Opened database successfully")
+    cursor=conn.cursor()
+    cursor.execute("SELECT * from users where username=? ",(del_user,))
+    data = cursor.fetchall()
+    print ("Data" ,data)
+
+    if len(data) == 0:
+        abort(404)
+    else:
+        cursor.execute("delete from users where username==?",(del_user,))
+
+    conn.commit()
+    return "Success"
+
+# Definition to update a specific user
+def upd_user(user):
+    conn = sqlite3.connect('mydb.db')
+    print ("Opened database successfully")
+    cursor=conn.cursor()
+    cursor.execute("SELECT * from users where id=? ",(user['id'],))
+    data = cursor.fetchall()
+    print (data)
+
+    if len(data) == 0:
+        abort(404)
+    else:
+        key_list=user.keys()
+        for i in key_list:
+            if i != "id":
+                print (user, i)
+                cursor.execute("""UPDATE users SET {0} = ? WHERE id = ?""".format(i), (user[i], user['id']))
+                conn.commit()
+    return "Success"
+
+# Route to list users
 @app.route('/api/v1/users', methods=['GET'])
 def get_users():
     return list_users()
 
+# Route to get a specific user
 @app.route('/api/v1/users/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     return list_user(user_id)
+
+# Route to add users via POST
+@app.route('/api/v1/users', methods=['POST'])
+def create_user():
+    if not request.json or not 'username' in request.json or not 'email' in request.json or not 'password' in request.json:
+        abort(400)
+    user = {
+        'username': request.json['username'],
+        'email': request.json['email'],
+        'name': request.json.get('name',""),
+        'password': request.json['password']
+    }
+    return jsonify({'status': add_user(user)}), 201
+
+# Route to delete a specific user
+@app.route('/api/v1/users', methods=['DELETE'])
+def delete_user():
+    if not request.json or not 'username' in request.json:
+        abort(400)
+    user=request.json['username']
+    return jsonify({'status': del_user(user)}), 200
+
+# Route to update a specific user via PUT
+@app.route('/api/v1/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    user = {}
+    if not request.json:
+        abort(400)
+    user['id']=user_id
+    key_list = request.json.keys()
+
+    for i in key_list:
+        user[i] = request.json[i]
+    print (user)
+    return jsonify({'status': upd_user(user)}), 200
+
+# Error handlers
+@app.errorhandler(400)
+def invalid_request(error):
+    return make_response(jsonify({'error': 'Bad Request'}), 400)
 
 @app.errorhandler(404)
 def resource_not_found(error):
     return make_response(jsonify({'error': 'Resource not found!'}), 404)
 
+@app.errorhandler(409)
+def user_found(error):
+    return make_response(jsonify({'error': 'Conflict! Record exist'}), 409)
+
+# Start up the web server and serve traffic
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
