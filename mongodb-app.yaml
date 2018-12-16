@@ -1,0 +1,27 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: cloud-native-python-mongodb
+spec: 
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: cloud-native-python
+        appdb: cloud-native-python-mongodb
+    spec: 
+      containers:
+      - name: cloud-native-python-mongodb
+        image: mongo:3.6.9
+        env:
+        - name: MONGODB_DATABASE
+          value: cloud-native-python-mongodb
+        ports:
+        - containerPort: 27017
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi

@@ -3,127 +3,121 @@ from flask import Flask, request, jsonify
 from flask import abort
 from flask import make_response, url_for
 
+from pymongo import MongoClient
+
+import random
 import json
 import sqlite3
 
 app = Flask(__name__)
 
+# Connection for MongoDB in separate container
+connection = MongoClient("mongodb://cloud-native-python-mongodb-service:27017/")
+
+# Initialize and populate MongoDB if needed
+def create_mongodatabase():
+    try:
+        dbnames = connection.list_database_names()
+        if 'cloud_native' not in dbnames:
+            db = connection.cloud_native.users
+            db_api = connection.cloud_native.apirelease
+
+            db.insert_one({
+            "email": "i_foulds@live.com",
+            "id": 1,
+            "name": "Iain Foulds",
+            "password": "cloud-native",
+            "username": "ifoulds"
+            })
+
+            db_api.insert_one( {
+              "buildtime": "2017-01-01 10:00:00",
+              "links": "/api/v1/users",
+              "methods": "get, post, put, delete",
+              "version": "v1"
+            })
+  
+            print ("Database Initialize completed!")
+        else:
+            print ("Database already Initialized!")
+    except:
+        print ("Database creation failed!!")
+
 # Set up route for displaying the REST API info
 @app.route("/api/v1/info")
 def home_index():
-    conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully")
     api_list=[]
-    cursor = conn.execute("SELECT buildtime, version, methods, links from apirelease")
-
-    for row in cursor:
-        a_dict = {}
-        a_dict['version'] = row[0]
-        a_dict['buildtime'] = row[1]
-        a_dict['methods'] = row[2]
-        a_dict['links'] = row[3]
-        api_list.append(a_dict)
-    
-    conn.close()
+    db = connection.cloud_native.apirelease
+    for row in db.find():
+        api_list.append(str(row))
     return jsonify({'api_version': api_list}), 200
 
-# Definition to list users from sqlite database
+# Definition to list users from MongoDB
 def list_users():
-    conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully")
     api_list=[]
-    cursor = conn.execute("SELECT username, full_name, emailid, password, id from users")
-
-    for row in cursor:
-        a_dict = {}
-        a_dict['username'] = row[0]
-        a_dict['name'] = row[1]
-        a_dict['email'] = row[2]
-        a_dict['password'] = row[3]
-        a_dict['id'] = row[4]
-        api_list.append(a_dict)
-
-    conn.close()
+    db = connection.cloud_native.users
+    
+    for row in db.find():
+        api_list.append(str(row))
+    
     return jsonify({'user_list': api_list})
 
-# Definition to list a specific user from sqlite database
+# Definition to list a specific user from MongoDB
 def list_user(user_id):
-    conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully")
     api_list=[]
-    cursor=conn.cursor()
-    cursor.execute("SELECT * from users where id=?",(user_id,))
-    data = cursor.fetchall()
+    db = connection.cloud_native.users
 
-    if len(data) == 0:
+    for i in db.find({'id':user_id}):
+        api_list.append(str(i))
+
+    if api_list == []:
         abort(404)
-    else:
-        user = {}
-        user['username'] = data[0][0]
-        user['name'] = data[0][1]
-        user['email'] = data[0][2]
-        user['password'] = data[0][3]
-        user['id'] = data[0][4]
+    return jsonify({'user_details':api_list})
 
-    conn.close()
-    return jsonify(user)
-
-# Definition to add a user to the sqlite database
+# Definition to add a user to the MongoDB
 def add_user(new_user):
-    conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully")
     api_list=[]
-    cursor=conn.cursor()
-    cursor.execute("SELECT * from users where username=? or emailid=?",(new_user['username'],new_user['email']))
-    data = cursor.fetchall()
+    print (new_user)
+    db = connection.cloud_native.users
+    user = db.find({'$or':[{"username":new_user['username']} ,{"email":new_user['email']}]})
+    for i in user:
+        print (str(i))
+        api_list.append(str(i))
 
-    if len(data) != 0:
-        abort(409)
-    else:
-        cursor.execute("insert into users (username, emailid, password,full_name) values(?,?,?,?)",(new_user['username'],new_user['email'],
-        new_user['password'], new_user['name']))
-        conn.commit()
-        return "Success"
-
-    conn.close()
-    return jsonify(a_dict)
+    # print (api_list)
+    if api_list == []:
+    #    print(new_user)
+       db.insert(new_user)
+       return "Success"
+    else :
+       abort(409)
 
 # Definition to delete a specific user
 def del_user(del_user):
-    conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully")
-    cursor=conn.cursor()
-    cursor.execute("SELECT * from users where username=? ",(del_user,))
-    data = cursor.fetchall()
-    print ("Data" ,data)
+    db = connection.cloud_native.users
+    api_list=[]
+    for i in db.find({'username':del_user}):
+        api_list.append(str(i))
 
-    if len(data) == 0:
+    if api_list == []:
         abort(404)
     else:
-        cursor.execute("delete from users where username==?",(del_user,))
-
-    conn.commit()
-    return "Success"
+       db.remove({"username":del_user})
+       return "Success"
 
 # Definition to update a specific user
 def upd_user(user):
-    conn = sqlite3.connect('mydb.db')
-    print ("Opened database successfully")
-    cursor=conn.cursor()
-    cursor.execute("SELECT * from users where id=? ",(user['id'],))
-    data = cursor.fetchall()
-    print (data)
-
-    if len(data) == 0:
-        abort(404)
+    api_list=[]
+    print (user)
+    db_user = connection.cloud_native.users
+    users = db_user.find_one({"id":user['id']})
+    for i in users:
+        api_list.append(str(i))
+    if api_list == []:
+       abort(409)
     else:
-        key_list=user.keys()
-        for i in key_list:
-            if i != "id":
-                print (user, i)
-                cursor.execute("""UPDATE users SET {0} = ? WHERE id = ?""".format(i), (user[i], user['id']))
-                conn.commit()
-    return "Success"
+        db_user.update({'id':user['id']},{'$set': user}, upsert=False )
+        return "Success"
 
 # Route to list users
 @app.route('/api/v1/users', methods=['GET'])
@@ -144,7 +138,8 @@ def create_user():
         'username': request.json['username'],
         'email': request.json['email'],
         'name': request.json.get('name',""),
-        'password': request.json['password']
+        'password': request.json['password'],
+        'id': random.randint(1,1000)
     }
     return jsonify({'status': add_user(user)}), 201
 
@@ -185,4 +180,5 @@ def user_found(error):
 
 # Start up the web server and serve traffic
 if __name__ == "__main__":
+    create_mongodatabase()
     app.run(host='0.0.0.0', port=5000, debug=True)
